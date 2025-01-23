@@ -6,5 +6,5 @@ Copyright (c) 2017 BugScan (http://www.bugscan.net)
 See the file 'LICENCE' for copying permission
 """
 
-__title__ = 'githack'
-__version__ = '0.0.5'
+__title__ = 'githack3'
+__version__ = '0.0.6'

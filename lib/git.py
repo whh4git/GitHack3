@@ -21,6 +21,7 @@ from lib.data import target
 from lib.common import check
 from lib.common import mkdir_p
 from lib.common import readFile
+from lib.common import subPopen
 from lib.common import writeFile
 from lib.settings import DEBUG
 import subprocess
@@ -28,10 +29,7 @@ import subprocess
 
 def init():
     logger.info("Initialize Git")
-    process = subprocess.Popen(
-        "git init %s" % (paths.GITHACK_DIST_TARGET_PATH),
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
+    stdout, stderr = subPopen(f"git init --initial-branch master {paths.GITHACK_DIST_TARGET_PATH}")
     if stderr:
         logger.error("Initialize Git Error: %s" % (stderr))
 
@@ -52,10 +50,7 @@ def clone():
 
 def valid_git_repo():
     logger.info("Valid Repository")
-    process = subprocess.Popen(
-        "cd %s && git reset" % (paths.GITHACK_DIST_TARGET_PATH),
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
+    stdout, stderr = subPopen(f"cd {paths.GITHACK_DIST_TARGET_PATH} && git reset")
     if stderr:
         logger.info("Valid Repository Fail")
         return False
@@ -97,14 +92,14 @@ def clone_from_cache():
     readorwget("FETCH_HEAD")
     readorwget("refs/heads/master")
     readorwget("refs/remote/master")
-    refs = readorwget("HEAD")[5:-1]
+    refs = readorwget("HEAD")[5:-1].decode()
     readorwget("index")
     readorwget("logs/HEAD", True)
     HEAD_HASH = readorwget(refs)
-    readorwget("logs/refs/heads/%s" % (refs.split("/")[-1]))
-    
+    readorwget(f"logs/refs/heads/{refs.split('/')[-1]}")
+
     if HEAD_HASH:
-        cache_commits(HEAD_HASH.replace("\n", ""))
+        cache_commits(HEAD_HASH.decode().replace("\n", ""))
 
     readorwget("logs/refs/remote/master")
     readorwget("logs/refs/stash")
@@ -116,7 +111,7 @@ def clone_from_cache():
     cache_objects()
 
 
-def readorwget(filename, refresh=False):
+def readorwget(filename: str, refresh=False):
     filepath = os.path.join(paths.GITHACK_DIST_TARGET_GIT_PATH, filename)
     if refresh or not os.path.exists(filepath):
         logger.info(filename)
@@ -134,14 +129,11 @@ def parse_refs(data):
         fetch_heads = re.findall(r'([a-z0-9]{40})\trefs/heads/(.+?)\n', data, re.M)
         FETCH_HEAD = ""
         for index in fetch_heads:
-            writeFile(
-                os.path.join(
-                    paths.GITHACK_DIST_TARGET_GIT_PATH,
-                    "refs/remotes/origin/%s" % str(index[1])
-                ), "%s\n" % (index[0]))
+            head_path = os.path.join(paths.GITHACK_DIST_TARGET_GIT_PATH, f"refs/remotes/origin/{str(index[1])}")
+            writeFile(head_path, f"{index[0]}\n")
             FETCH_HEAD += "%s\tnot-for-merge\t'%s' of %s\n" % (index[0], index[1], target.TARGET_GIT_URL[:-5])
 
-        config = """[core]
+        config = f"""[core]
         repositoryformatversion = 0
         filemode = true
         bare = false
@@ -149,9 +141,9 @@ def parse_refs(data):
         ignorecase = true
         precomposeunicode = true
     [remote "origin"]
-        url = %s
+        url = {target.TARGET_GIT_URL[:-1]}
         fetch = +refs/heads/*:refs/remotes/origin/*
-    """ % (target.TARGET_GIT_URL[:-1])
+    """
         writeFile(os.path.join(paths.GITHACK_DIST_TARGET_GIT_PATH, "config"), config)
     except:
         logger.warning("Parse refs Fail")
@@ -179,8 +171,8 @@ def cache_commits(starthash):
             data = get_objects(i)
             try:
                 objdata = zlib.decompress(data)
-                if objdata[:4] == 'tree':
-                    trees = parse_tree(objdata[objdata.find('\x00') + 1:])
+                if objdata.startswith(b"tree"):
+                    trees = parse_tree(objdata[objdata.find(b"\x00") + 1 :])
                     tmp.extend(trees)
             except:
                 pass
@@ -192,8 +184,8 @@ def cache_commits(starthash):
             data = get_objects(obj)
             try:
                 objdata = zlib.decompress(data)
-                if objdata[:4] == 'tree':
-                    trees = parse_tree(objdata[objdata.find('\x00') + 1:])
+                if objdata.startswith(b"tree"):
+                    trees = parse_tree(objdata[objdata.find(b"\x00") + 1 :])
                     tmp.extend(trees)
             except:
                 pass
@@ -201,7 +193,7 @@ def cache_commits(starthash):
     logger.info("Fetch Commit Objects End")
 
 
-def parse_tree(text, strict=False):
+def parse_tree(text: bytes, strict=False):
     count = 0
     retVal = []
     l = len(text)
@@ -212,7 +204,7 @@ def parse_tree(text, strict=False):
             logger.warning("Invalid mode '%s'" % mode_text)
             break
         try:
-            mode = int(mode_text, 8)
+            mode = int(mode_text.decode(), 8)
         except ValueError:
             logger.warning("Invalid mode '%s'" % mode_text)
             break
@@ -240,11 +232,11 @@ def parse_commit(data, commithash):
     obj = None
     try:
         de_data = zlib.decompress(data)
-        m = re.search(
-            'commit \d+?\x00tree ([a-z0-9]{40})\n', de_data, re.M | re.S | re.I)
+        m = re.search(b"commit \\d+?\x00tree ([a-z0-9]{40})\n", de_data, re.M | re.S | re.I)
         if m:
-            obj = m.group(1)
-        parents = re.findall('parent ([a-z0-9]{40})\n', de_data, re.M | re.S | re.I)
+            obj = m.group(1).decode()
+        parents = re.findall(b"parent ([a-z0-9]{40})\n", de_data, re.M | re.S | re.I)
+        parents = list(map((lambda x: x.decode() if isinstance(x, bytes) else x), parents))
     except:
         parents = []
         if DEBUG:
@@ -252,12 +244,11 @@ def parse_commit(data, commithash):
     return (obj, parents)
 
 
-def get_objects(objhash):
-    folder = os.path.join(
-        paths.GITHACK_DIST_TARGET_GIT_PATH, "objects/%s/" % objhash[:2])
+def get_objects(objhash: str):
+    folder = os.path.join(paths.GITHACK_DIST_TARGET_GIT_PATH, "objects/%s/" % objhash[:2])
     if not os.path.exists(folder):
         mkdir_p(folder)
-    data = readorwget("objects/%s/%s" % (objhash[:2], objhash[2:]))
+    data = readorwget(f"objects/{objhash[:2]}/{objhash[2:]}")
     return data
 
 
@@ -268,7 +259,7 @@ def cache_objects():
                 data = get_objects(entry["sha1"])
                 if data:
                     data = zlib.decompress(data)
-                    data = re.sub('blob \d+\00', '', data)
+                    data = re.sub(b'blob \\d+\00', b'', data)
                     target_dir = os.path.join(paths.GITHACK_DIST_TARGET_PATH, os.path.dirname(entry["name"]))
                     if target_dir and not os.path.exists(target_dir):
                         os.makedirs(target_dir)
@@ -392,7 +383,7 @@ def parse_index(filename, pretty=True):
 
             padlen = (8 - (entrylen % 8)) or 8
             nuls = f.read(padlen)
-            check(set(nuls) == set(['\x00']), "padding contained non-NUL")
+            check(set(nuls) == set(b'\x00'), "padding contained non-NUL")
 
             yield entry
 

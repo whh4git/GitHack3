@@ -8,7 +8,7 @@ See the file 'LICENCE' for copying permission
 
 import sys
 import os
-import urlparse
+from urllib import parse as urlparse
 from lib.data import logger
 from lib.data import paths
 from lib.data import target
@@ -20,10 +20,14 @@ from lib.settings import DEPENDS
 from lib.settings import DEBUG
 
 
+def subPopen(cmd):
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return process.communicate()
+
+
 def checkdepends():
     logger.info("Check Depends")
-    process = subprocess.Popen("git --version", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
+    stdout, stderr = subPopen("git --version")
     if stderr:
         logger.error(DEPENDS)
         sys.exit(1)
@@ -81,7 +85,7 @@ def readFile(filename):
     try:
         with open(filename, "rb") as f:
             retVal = f.read()
-    except IOError, ex:
+    except IOError as ex:
         errMsg = "something went wrong while trying to read "
         errMsg += "the input file ('%s')" % ex
         # raise IOError(errMsg)
@@ -92,7 +96,7 @@ def writeFile(filename, data):
     try:
         with open(filename, "wb") as f:
             f.write(data)
-    except IOError, ex:
+    except IOError as ex:
         errMsg = "something went wrong while trying to write "
         errMsg += "to the output file ('%s')" % ex
         # raise IOError(errMsg)

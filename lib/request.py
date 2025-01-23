@@ -7,7 +7,7 @@ See the file 'LICENCE' for copying permission
 """
 
 import os
-import urllib2
+import urllib.request as urllib2
 import random
 from lib.common import writeFile
 from lib.data import paths
@@ -23,13 +23,16 @@ def randomAgent():
 
 def request_data(url):
     for i in range(3):
-        data = None
+        data: bytes = None
         try:
-            request = urllib2.Request(url, None, {'User-Agent': randomAgent()})
-            data = urllib2.urlopen(request).read()
+            request = urllib2.Request(url, None, {"User-Agent": randomAgent()})
+            response = urllib2.urlopen(request)
+            if response.getcode()>=400:
+                return None
+            data = response.read()
             if data:
                 return data
-        except Exception, e:
+        except Exception as e:
             if DEBUG:
                 logger.warning("Request Exception: %s" % str(e))
     return None
@@ -58,6 +61,7 @@ def isdirlist():
     ]
     data = request_data(target.TARGET_GIT_URL)
     if data:
+        data=data.decode()
         for key in keywords:
             if key in data:
                 logger.info("%s is support Directory Listing" % target.TARGET_GIT_URL)
